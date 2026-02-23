@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download Progress - EZC</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 16px;
+            border-radius: 8px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #030303;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #5f6368;
+        }
+
+        .progress-section {
+            margin-bottom: 24px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .progress-text {
+            color: #030303;
+            font-weight: 500;
+        }
+
+        .progress-percent {
+            color: #FF0000;
+            font-weight: 700;
+        }
+
+        .progress-bar {
+            background: #e8e8e8;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-fill {
+            background: linear-gradient(90deg, #FF0000 0%, #ff4444 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .progress-message {
+            font-size: 12px;
+            color: #5f6368;
+            word-break: break-word;
+            min-height: 20px;
+            line-height: 1.4;
+        }
+
+        .status-icon {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #FF0000;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-section {
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+            margin-bottom: 20px;
+        }
+
+        .status-section.show {
+            display: block;
+        }
+
+        .status-success {
+            background: #e6f4ea;
+            color: #137333;
+            border: 1px solid #a8d5ba;
+        }
+
+        .status-error {
+            background: #fce8e6;
+            color: #c5221f;
+            border: 1px solid #f1dce0;
+        }
+
+        .status-info {
+            background: #e8f0fe;
+            color: #1f2937;
+            border: 1px solid #d2d9f7;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 24px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .close-btn {
+            background: #e8e8e8;
+            color: #030303;
+        }
+
+        .close-btn:hover {
+            background: #d3d3d3;
+        }
+
+        .play-btn {
+            background: #FF0000;
+            color: #ffffff;
+            display: none;
+        }
+
+        .play-btn:hover {
+            background: #e50000;
+        }
+
+        .play-btn.show {
+            display: inline-block;
+        }
+
+        .info-text {
+            font-size: 12px;
+            color: #5f6368;
+            margin-top: 16px;
+            text-align: center;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="icons/EZC.png" alt="EZC" class="logo">
+            <div class="title">Download Progress</div>
+            <div class="subtitle">EZC YouTube Downloader</div>
+        </div>
+
+        <div class="status-section" id="statusSection">
+            <div id="statusMessage"></div>
+        </div>
+
+        <div class="progress-section">
+            <div class="progress-label">
+                <span class="progress-text">Downloading video...</span>
+                <span class="progress-percent" id="percentDisplay">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-message">
+                <span class="spinner" id="spinner"></span>
+                <span id="statusMessage2">Connecting to server...</span>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="close-btn" id="closeBtn">Close</button>
+            <button class="play-btn" id="playBtn">Open Player</button>
+        </div>
+
+        <div class="info-text">
+            Please keep this window open until the download completes.
+        </div>
+    </div>
+
+    <script src="download.js"></script>
+</body>
+</html>

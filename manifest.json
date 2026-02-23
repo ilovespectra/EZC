@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "EZC - YouTube Ad-Free Downloader",
+  "version": "1.0.0",
+  "description": "Download YouTube videos ad-free and play them in your browser",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "activeTab",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "http://localhost:9234/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "EZC YouTube Downloader",
+    "default_icon": "icons/EZC.png"
+  },
+  "icons": {
+    "16": "icons/EZC.png",
+    "48": "icons/EZC.png",
+    "128": "icons/EZC.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "content-script.js"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "download.html",
+        "downloads-view.html",
+        "player.html"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "com.ezc.youtube",
+  "description": "EZC YouTube Extension Native Host",
+  "path": "/Users/tanny/EZC/native-host.py",
+  "type": "stdio",
+  "allowed_extensions": [
+    "chrome-extension://YOUR_EXTENSION_ID"
+  ]
+}
