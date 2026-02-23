@@ -1,5 +1,8 @@
 // Background service worker for handling downloads and messaging
 
+// Track if any extension windows are currently open
+let activeExtensionWindows = new Set();
+
 // Ensure server is running on extension load
 chrome.runtime.onInstalled.addListener(() => {
     ensureServerRunning();
@@ -9,6 +12,41 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
     ensureServerRunning();
 });
+
+// Handle when browser is closing - clean up server
+chrome.windows.onRemoved.addListener((windowId) => {
+    activeExtensionWindows.delete(windowId);
+    
+    // If no more active extension windows, kill the server
+    if (activeExtensionWindows.size === 0) {
+        killServer();
+    }
+});
+
+// Periodic health check - restart server if it dies
+setInterval(() => {
+    checkServerHealth();
+}, 30000); // Check every 30 seconds
+
+async function checkServerHealth() {
+    try {
+        const response = await fetch('http://localhost:9234/health', {
+            method: 'GET',
+            timeout: 2000
+        });
+        
+        if (!response.ok) {
+            console.warn('Server health check failed, attempting restart');
+            await restartServer();
+        }
+    } catch (error) {
+        // Server is not responding
+        if (activeExtensionWindows.size > 0) {
+            console.warn('Server is down, attempting to restart');
+            await restartServer();
+        }
+    }
+}
 
 async function ensureServerRunning() {
     try {
@@ -56,29 +94,36 @@ async function ensureServerRunning() {
     }
 }
 
+async function killServer() {
+    try {
+        console.log('Attempting to kill server...');
+        await new Promise((resolve, reject) => {
+            chrome.runtime.sendNativeMessage(
+                'com.ezc.youtube',
+                { action: 'killServer' },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Could not kill server:', chrome.runtime.lastError.message);
+                    } else {
+                        console.log('Kill server response:', response);
+                    }
+                    resolve();
+                }
+            );
+        });
+    } catch (e) {
+        console.warn('Error killing server:', e.message);
+    }
+}
+
 async function restartServer() {
     try {
         console.log('Attempting to restart server...');
         // Kill existing server if running
-        try {
-            await new Promise((resolve, reject) => {
-                chrome.runtime.sendNativeMessage(
-                    'com.ezc.youtube',
-                    { action: 'killServer' },
-                    (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.warn('Could not kill server via native messaging:', chrome.runtime.lastError.message);
-                        }
-                        resolve();
-                    }
-                );
-            });
-        } catch (e) {
-            console.warn('Native kill failed:', e.message);
-        }
+        await killServer();
         
         // Wait before restarting
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
         // Start fresh server
         return await ensureServerRunning();
@@ -90,6 +135,11 @@ async function restartServer() {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'startDownload') {
+        // Track that a download window is active
+        if (sender.url?.includes('download.html')) {
+            activeExtensionWindows.add(sender.frameId);
+        }
+        
         // Ensure server is running before download
         ensureServerRunning().then(() => {
             handleDownload(request.url, request.quality, request.audioOnly).then(result => {
@@ -99,6 +149,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         });
         return true; // Keep the message channel open for async response
+    } else if (request.action === 'viewDownloads') {
+        // Ensure server is running for downloads view
+        ensureServerRunning().then(() => {
+            sendResponse({ success: true, message: 'Server ready' });
+        }).catch(error => {
+            sendResponse({ success: false, message: error.message });
+        });
+        return true;
     } else if (request.action === 'startAudioConversion') {
         // Convert video to audio on the server
         ensureServerRunning().then(() => {

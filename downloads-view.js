@@ -2,7 +2,7 @@
 let allVideos = [];
 let deleteTarget = null;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const refreshBtn = document.getElementById('refreshBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const playAllBtn = document.getElementById('playAllBtn');
@@ -12,6 +12,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteModal = document.getElementById('deleteModal');
     const cancelDeleteBtn = document.querySelector('.modal-actions .btn-secondary');
     const confirmDeleteBtn = document.querySelector('.modal-actions .btn-delete');
+
+    // Ensure server is running when page loads
+    try {
+        await chrome.runtime.sendMessage({
+            action: 'ensureServer'
+        });
+    } catch (error) {
+        console.warn('Could not ensure server is running:', error);
+    }
 
     if (refreshBtn) refreshBtn.addEventListener('click', loadVideos);
     if (downloadBtn) downloadBtn.addEventListener('click', openNewDownload);
@@ -201,15 +210,26 @@ function loadVideos() {
     // First ensure server is running
     chrome.runtime.sendMessage(
         { action: 'ensureServer' },
-        (response) => {
+        async (response) => {
             if (chrome.runtime.lastError) {
                 console.error('Extension communication error:', chrome.runtime.lastError);
             }
             
-            // Try to fetch videos
-            fetch('http://localhost:9234/list')
-                .then(response => response.json())
-                .then(data => {
+            // Attempt to fetch videos with automatic retry
+            let retryCount = 0;
+            const maxRetries = 8;
+            let lastError = null;
+
+            const attemptFetch = async () => {
+                try {
+                    const response = await fetch('http://localhost:9234/list');
+                    
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    
+                    const data = await response.json();
+                    
                     // Filter to show only video files, not audio files
                     allVideos = (data.videos || []).filter(v => {
                         const ext = v.name.toLowerCase().split('.').pop();
@@ -247,14 +267,49 @@ function loadVideos() {
                         `).join('');
                         videosContainer.style.display = 'grid';
                     }
-                })
-                .catch(error => {
-                    console.error('Error loading videos:', error);
-                    loadingState.style.display = 'none';
+                    
+                    // Success - hide error message if shown
                     const errorMsg = document.getElementById('errorMsg');
-                    errorMsg.textContent = 'Server starting... Please wait a moment and refresh.';
-                    errorMsg.style.display = 'block';
-                });
+                    if (errorMsg) {
+                        errorMsg.style.display = 'none';
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    lastError = error;
+                    retryCount++;
+                    
+                    if (retryCount <= maxRetries) {
+                        // Calculate exponential backoff: 500ms, 1s, 2s, 4s, etc.
+                        const delay = Math.min(500 * Math.pow(2, retryCount - 1), 5000);
+                        
+                        console.log(`Retrying video load (attempt ${retryCount}/${maxRetries}) in ${delay}ms...`);
+                        
+                        // Show message to user
+                        const errorMsg = document.getElementById('errorMsg');
+                        errorMsg.textContent = `Server starting... attempting to load (retry ${retryCount}/${maxRetries})`;
+                        errorMsg.style.display = 'block';
+                        
+                        // Wait and retry
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return attemptFetch();
+                    } else {
+                        // Max retries reached
+                        console.error('Failed to load videos after max retries:', lastError);
+                        return false;
+                    }
+                }
+            };
+
+            // Start the fetch attempt
+            const success = await attemptFetch();
+            
+            if (!success) {
+                loadingState.style.display = 'none';
+                const errorMsg = document.getElementById('errorMsg');
+                errorMsg.textContent = 'Unable to connect to server. Please refresh to try again.';
+                errorMsg.style.display = 'block';
+            }
         }
     );
 }

@@ -79,6 +79,74 @@ def start_server():
             'message': f'Error starting server: {str(e)}'
         }
 
+def kill_server():
+    """Kill the EZC server process"""
+    try:
+        import socket
+        
+        # Check if server is running
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(('localhost', 9234))
+        sock.close()
+        
+        if result != 0:
+            # Server not running
+            return {
+                'status': 'success',
+                'message': 'Server is not running',
+                'killed': False
+            }
+        
+        # Try to kill using subprocess
+        script_dir = Path(__file__).parent
+        kill_script = script_dir / 'kill-server.py'
+        
+        if kill_script.exists():
+            try:
+                subprocess.run(
+                    ['python3', str(kill_script)],
+                    timeout=5,
+                    capture_output=True
+                )
+                time.sleep(1)  # Wait for process to fully terminate
+                
+                # Verify server is dead
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                result = sock.connect_ex(('localhost', 9234))
+                sock.close()
+                
+                if result != 0:
+                    return {
+                        'status': 'success',
+                        'message': 'Server killed successfully',
+                        'killed': True
+                    }
+                else:
+                    return {
+                        'status': 'error',
+                        'message': 'Server still running after kill attempt',
+                        'killed': False
+                    }
+            except subprocess.TimeoutExpired:
+                return {
+                    'status': 'error',
+                    'message': 'Kill script timeout',
+                    'killed': False
+                }
+        else:
+            return {
+                'status': 'error',
+                'message': 'kill-server.py not found',
+                'killed': False
+            }
+    
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Error killing server: {str(e)}',
+            'killed': False
+        }
+
 def main():
     """Main message loop"""
     while True:
@@ -95,6 +163,9 @@ def main():
             # Handle different actions
             if request.get('action') == 'startServer':
                 response = start_server()
+                send_message(response)
+            elif request.get('action') == 'killServer':
+                response = kill_server()
                 send_message(response)
             elif request.get('action') == 'checkServer':
                 import socket

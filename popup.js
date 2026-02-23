@@ -8,7 +8,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const statusMessage = document.getElementById('statusMessage');
 
     // View downloads button
-    viewDownloadsBtn.addEventListener('click', () => {
+    viewDownloadsBtn.addEventListener('click', async () => {
+        // Ensure server is running before opening downloads view
+        try {
+            await chrome.runtime.sendMessage({
+                action: 'viewDownloads'
+            });
+        } catch (error) {
+            console.warn('Could not ensure server:', error);
+        }
+        
+        // Open downloads view
         const downloadsUrl = chrome.runtime.getURL('downloads-view.html');
         chrome.tabs.create({ url: downloadsUrl });
     });

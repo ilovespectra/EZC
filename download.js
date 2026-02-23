@@ -1,5 +1,5 @@
 // Download progress tracking script
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const progressFill = document.getElementById('progressFill');
     const percentDisplay = document.getElementById('percentDisplay');
     const statusMessage2 = document.getElementById('statusMessage2');
@@ -7,6 +7,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeBtn = document.getElementById('closeBtn');
     const playBtn = document.getElementById('playBtn');
     const statusSection = document.getElementById('statusSection');
+
+    // Ensure server is running
+    try {
+        await chrome.runtime.sendMessage({
+            action: 'ensureServer'
+        });
+    } catch (error) {
+        console.warn('Could not ensure server:', error);
+    }
 
     let lastPercent = 0;
     let pollCount = 0;

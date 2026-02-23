@@ -1,5 +1,5 @@
 // Video player script with controls
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const video = document.getElementById('videoPlayer');
     const playBtn = document.getElementById('playBtn');
     const volumeBtn = document.getElementById('volumeBtn');
@@ -21,6 +21,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingState = document.getElementById('loadingState');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
+
+    // Ensure server is running when player loads
+    try {
+        await chrome.runtime.sendMessage({
+            action: 'ensureServer'
+        });
+    } catch (error) {
+        console.warn('Could not ensure server:', error);
+    }
 
     let currentSpeed = 1;
     let playlist = null;  // Array of video names
