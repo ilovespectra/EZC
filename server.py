@@ -5,7 +5,6 @@ Downloads YouTube videos using yt-dlp and provides progress tracking
 """
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
 import json
 import subprocess
 import threading
@@ -15,6 +14,7 @@ import time
 import re
 import signal
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 # Configuration
 SERVER_PORT = 9234
@@ -28,7 +28,10 @@ download_state = {
     'current_file': None,
     'total_size': 0,
     'downloaded_size': 0,
-    'error': None
+    'error': None,
+    'is_playlist': False,
+    'playlist_item': None,
+    'playlist_total': None
 }
 download_lock = threading.Lock()
 
@@ -124,6 +127,7 @@ class DownloadHandler(BaseHTTPRequestHandler):
             url = data.get('url')
             quality = data.get('quality', 'best')
             audio_only = data.get('audioOnly', False)
+            download_playlist = bool(parse_qs(urlparse(url or '').query).get('list', [None])[0])
             
             if not url:
                 self.send_response(400)
@@ -135,7 +139,7 @@ class DownloadHandler(BaseHTTPRequestHandler):
             # Start download in background thread
             thread = threading.Thread(
                 target=download_video,
-                args=(url, quality, audio_only)
+                args=(url, quality, audio_only, download_playlist)
             )
             thread.daemon = True
             thread.start()
@@ -308,7 +312,6 @@ class DownloadHandler(BaseHTTPRequestHandler):
         """Stream the downloaded video file"""
         try:
             # Parse query string for video name
-            from urllib.parse import urlparse, parse_qs
             parsed_url = urlparse(self.path)
             query_params = parse_qs(parsed_url.query)
             
@@ -394,7 +397,7 @@ class DownloadHandler(BaseHTTPRequestHandler):
         return
 
 
-def download_video(url, quality, audio_only=False):
+def download_video(url, quality, audio_only=False, download_playlist=False):
     """Download video or audio using yt-dlp"""
     global download_state
     
@@ -410,14 +413,22 @@ def download_video(url, quality, audio_only=False):
             download_state['percent'] = 0
             download_state['message'] = f'Starting {mode} download...'
             download_state['error'] = None
+            download_state['is_playlist'] = download_playlist
+            download_state['playlist_item'] = None
+            download_state['playlist_total'] = None
         
         print(f'[DOWNLOAD] Downloads directory: {DOWNLOADS_DIR}', flush=True)
         
         if audio_only:
             # Audio-only format: best quality audio as MP3
             format_str = 'bestaudio'
-            output_ext = '.mp3'
-            output_template = str(DOWNLOADS_DIR / '%(title)s') + output_ext
+            if download_playlist:
+                output_template = str(
+                    DOWNLOADS_DIR /
+                    '%(playlist_title)s - %(playlist_index)03d - %(title)s [%(id)s].%(ext)s'
+                )
+            else:
+                output_template = str(DOWNLOADS_DIR / '%(title)s [%(id)s].%(ext)s')
         else:
             # Map quality to yt-dlp format string for video
             format_map = {
@@ -429,9 +440,17 @@ def download_video(url, quality, audio_only=False):
             }
             
             format_str = format_map.get(quality, 'best')
-            output_template = str(DOWNLOADS_DIR / '%(title)s.%(ext)s')
+            if download_playlist:
+                output_template = str(
+                    DOWNLOADS_DIR /
+                    '%(playlist_title)s - %(playlist_index)03d - %(title)s [%(id)s].%(ext)s'
+                )
+            else:
+                output_template = str(DOWNLOADS_DIR / '%(title)s [%(id)s].%(ext)s')
         
         print(f'[DOWNLOAD] Using format: {format_str}', flush=True)
+        if download_playlist:
+            print('[DOWNLOAD] Playlist mode enabled', flush=True)
         
         # yt-dlp command
         cmd = [
@@ -439,6 +458,7 @@ def download_video(url, quality, audio_only=False):
             '-f', format_str,
             '-o', output_template,
             '--progress',
+            '--newline',
             '--no-quiet',
         ]
         
@@ -454,6 +474,10 @@ def download_video(url, quality, audio_only=False):
                 '--merge-output-format', 'mp4',
             ])
         
+        if download_playlist:
+            # A watch URL with both v= and list= downloads only the current video
+            # by default. Explicitly opt into the playlist the user selected.
+            cmd.append('--yes-playlist')
         cmd.append(url)
         print(f'[DOWNLOAD] Running command: {" ".join(cmd)}', flush=True)
         
@@ -461,49 +485,53 @@ def download_video(url, quality, audio_only=False):
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
         )
         
         print(f'[DOWNLOAD] Process started with PID: {process.pid}', flush=True)
         
         # Track progress
         last_progress_update = 0
-        while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-            
-            if line:
-                line = line.strip()
-                print(f'[DOWNLOAD] yt-dlp: {line}', flush=True)
-                
-                # Update progress state
-                current_time = time.time()
-                if current_time - last_progress_update > 0.5:  # Update at most every 0.5 seconds
-                    with download_lock:
-                        # Always update message
-                        download_state['message'] = line[:100]
-                        
-                        # Try to extract percentage from any line containing %
-                        if '%' in line:
-                            try:
-                                match = re.search(r'(\d+(?:\.\d+)?)\%', line)
-                                if match:
-                                    percent = float(match.group(1))
-                                    download_state['percent'] = min(int(percent), 99)
-                                    print(f'[DOWNLOAD] Extracted percent: {percent}%', flush=True)
-                            except Exception as e:
-                                print(f'[DOWNLOAD] Regex parse error: {e}', flush=True)
-                    last_progress_update = current_time
+        current_playlist_item = 1
+        playlist_item_count = None
+        recent_output = []
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            print(f'[DOWNLOAD] yt-dlp: {line}', flush=True)
+            recent_output.append(line)
+            if len(recent_output) > 40:
+                recent_output.pop(0)
+
+            item_match = re.search(r'Downloading item (\d+) of (\d+)', line, re.IGNORECASE)
+            if item_match:
+                current_playlist_item = int(item_match.group(1))
+                playlist_item_count = int(item_match.group(2))
+                with download_lock:
+                    download_state['playlist_item'] = current_playlist_item
+                    download_state['playlist_total'] = playlist_item_count
+
+            current_time = time.time()
+            if current_time - last_progress_update > 0.5:
+                with download_lock:
+                    download_state['message'] = line[:100]
+                    match = re.search(r'(\d+(?:\.\d+)?)%', line)
+                    if match:
+                        percent = float(match.group(1))
+                        if playlist_item_count:
+                            percent = ((current_playlist_item - 1) + percent / 100) / playlist_item_count * 100
+                        download_state['percent'] = min(int(percent), 99)
+                last_progress_update = current_time
         
-        # Check for errors
-        returncode = process.poll()
+        # Check for errors; stderr is merged into stdout and drained continuously.
+        returncode = process.wait()
         print(f'[DOWNLOAD] Process finished with return code: {returncode}', flush=True)
         
         if returncode != 0:
-            stderr = process.stderr.read()
-            error_msg = stderr if stderr else 'Unknown error'
+            error_msg = '\n'.join(recent_output[-20:]) or 'Unknown error'
             print(f'[DOWNLOAD] yt-dlp error: {error_msg}', flush=True)
             with download_lock:
                 download_state['status'] = 'error'

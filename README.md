@@ -22,7 +22,7 @@ A simple, fast Chrome extension to download YouTube videos in your preferred qua
    - Done! The EZC icon appears in your toolbar
 
 4. **Download Your First Video:**
-   - Go to any YouTube video
+   - Go to a YouTube video or playlist (open the playlist URL if you want every item)
    - Click the EZC icon
    - Choose quality (Best, 1080p, 720p, 480p, 360p)
    - Click "Download"
@@ -1171,7 +1171,7 @@ cp /Users/tanny/EZC/downloads/* /Volumes/ExternalDrive/
 
 ## Next Steps (Optional Enhancements)
 
-- Add playlist download support
+- Add playlist download queue and per-playlist management
 - Add subtitle download option
 - Add download history/management
 - Add batch download queue

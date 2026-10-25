@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeBtn = document.getElementById('closeBtn');
     const playBtn = document.getElementById('playBtn');
     const statusSection = document.getElementById('statusSection');
+    const progressText = document.querySelector('.progress-text');
 
     // Ensure server is running
     try {
@@ -19,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let lastPercent = 0;
     let pollCount = 0;
-    const maxPollAttempts = 300; // 5 minutes of polling (300 * 1000ms)
+    const maxPollAttempts = 300; // Stop retrying if the server never becomes available
 
     // Close button handler
     closeBtn.addEventListener('click', () => {
@@ -41,7 +42,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 const status = data.status;
                 const percent = Math.min(Math.max(data.percent, lastPercent), 100); // Monotonic progress
-                const message = data.message || '';
+                const message = data.playlist_item && data.playlist_total
+                    ? `Item ${data.playlist_item} of ${data.playlist_total}: ${data.message || ''}`
+                    : (data.message || '');
+
+                if (progressText && data.is_playlist) {
+                    progressText.textContent = 'Downloading playlist...';
+                }
 
                 // Prevent progress from going backward
                 if (percent < lastPercent && percent !== 0) {
@@ -65,7 +72,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     spinner.style.display = 'none';
                     progressFill.style.width = '100%';
                     percentDisplay.textContent = '100%';
-                    statusMessage2.textContent = 'Download complete!';
+                    statusMessage2.textContent = data.is_playlist
+                        ? 'Playlist download complete!'
+                        : 'Download complete!';
                     
                     playBtn.classList.add('show');
 
@@ -80,15 +89,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else if (status === 'error') {
                     // Download error
                     spinner.style.display = 'none';
-                    showStatus(data.message || 'Download failed', 'error');
+                    const errorDetail = data.error || data.message || 'Download failed';
+                    showStatus(`Download failed:\n${errorDetail}`.slice(0, 1200), 'error');
                     closeBtn.textContent = 'Close';
                 } else if (status === 'downloading') {
-                    // Still downloading
-                    if (pollCount < maxPollAttempts) {
-                        setTimeout(pollProgress, 500);
-                    } else {
-                        showStatus('Download timeout', 'error');
-                    }
+                    // Large playlists can take much longer than a fixed polling window.
+                    setTimeout(pollProgress, 500);
                 } else {
                     // Waiting or idle
                     if (pollCount < maxPollAttempts) {
